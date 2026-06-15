@@ -1,0 +1,26 @@
+apiVersion: apps/v1
+kind: Deployment
+
+metadata:
+  name: chaos-platform
+
+spec:
+  replicas: 1
+
+  selector:
+    matchLabels:
+      app: chaos-platform
+
+  template:
+    metadata:
+      labels:
+        app: chaos-platform
+
+    spec:
+      containers:
+        - name: chaos-platform
+          image: chaos-platform:latest
+          imagePullPolicy: Never
+
+          ports:
+            - containerPort: 8000

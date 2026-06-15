@@ -7,12 +7,29 @@ app = FastAPI(
     version="1.1"
 )
 
-# Load Kubernetes configuration
-config.load_kube_config()
+# --------------------------------------------------
+# Kubernetes Configuration
+# --------------------------------------------------
 
+try:
+    config.load_incluster_config()
+    print("Running inside Kubernetes cluster")
+except:
+    try:
+        config.load_kube_config()
+        print("Loaded local kubeconfig")
+    except:
+        print("Kubernetes config not found. Running in standalone mode.")
+
+# --------------------------------------------------
 # Experiment History Storage
+# --------------------------------------------------
+
 experiment_history = []
 
+# --------------------------------------------------
+# Home
+# --------------------------------------------------
 
 @app.get("/")
 def home():
@@ -21,17 +38,16 @@ def home():
         "status": "healthy"
     }
 
-
 # --------------------------------------------------
-# POD KILL EXPERIMENT
+# Pod Kill Experiment
 # --------------------------------------------------
 
 @app.post("/experiments/pod-kill")
 def pod_kill(namespace: str, pod_name: str):
 
-    v1 = client.CoreV1Api()
-
     try:
+        v1 = client.CoreV1Api()
+
         v1.delete_namespaced_pod(
             name=pod_name,
             namespace=namespace
@@ -55,39 +71,39 @@ def pod_kill(namespace: str, pod_name: str):
             "message": str(e)
         }
 
-
 # --------------------------------------------------
-# CPU STRESS EXPERIMENT
+# CPU Stress Experiment
 # --------------------------------------------------
 
 @app.post("/experiments/cpu-stress")
 def cpu_stress(namespace: str):
 
-    v1 = client.CoreV1Api()
-
-    stress_pod = {
-        "apiVersion": "v1",
-        "kind": "Pod",
-        "metadata": {
-            "name": "cpu-stress-test"
-        },
-        "spec": {
-            "restartPolicy": "Never",
-            "containers": [
-                {
-                    "name": "stress",
-                    "image": "alpine",
-                    "command": [
-                        "sh",
-                        "-c",
-                        "while true; do yes > /dev/null; done"
-                    ]
-                }
-            ]
-        }
-    }
-
     try:
+
+        v1 = client.CoreV1Api()
+
+        stress_pod = {
+            "apiVersion": "v1",
+            "kind": "Pod",
+            "metadata": {
+                "name": "cpu-stress-test"
+            },
+            "spec": {
+                "restartPolicy": "Never",
+                "containers": [
+                    {
+                        "name": "stress",
+                        "image": "alpine",
+                        "command": [
+                            "sh",
+                            "-c",
+                            "while true; do yes > /dev/null; done"
+                        ]
+                    }
+                ]
+            }
+        }
+
         v1.create_namespaced_pod(
             namespace=namespace,
             body=stress_pod
@@ -104,44 +120,45 @@ def cpu_stress(namespace: str):
         }
 
     except Exception as e:
+
         return {
             "status": "error",
             "message": str(e)
         }
 
-
 # --------------------------------------------------
-# MEMORY STRESS EXPERIMENT
+# Memory Stress Experiment
 # --------------------------------------------------
 
 @app.post("/experiments/memory-stress")
 def memory_stress(namespace: str):
 
-    v1 = client.CoreV1Api()
-
-    memory_pod = {
-        "apiVersion": "v1",
-        "kind": "Pod",
-        "metadata": {
-            "name": "memory-stress-test"
-        },
-        "spec": {
-            "restartPolicy": "Never",
-            "containers": [
-                {
-                    "name": "memory-stress",
-                    "image": "alpine",
-                    "command": [
-                        "sh",
-                        "-c",
-                        "tail /dev/zero | head -c 500M > /dev/null && sleep 300"
-                    ]
-                }
-            ]
-        }
-    }
-
     try:
+
+        v1 = client.CoreV1Api()
+
+        memory_pod = {
+            "apiVersion": "v1",
+            "kind": "Pod",
+            "metadata": {
+                "name": "memory-stress-test"
+            },
+            "spec": {
+                "restartPolicy": "Never",
+                "containers": [
+                    {
+                        "name": "memory-stress",
+                        "image": "alpine",
+                        "command": [
+                            "sh",
+                            "-c",
+                            "tail /dev/zero | head -c 500M > /dev/null && sleep 300"
+                        ]
+                    }
+                ]
+            }
+        }
+
         v1.create_namespaced_pod(
             namespace=namespace,
             body=memory_pod
@@ -158,14 +175,14 @@ def memory_stress(namespace: str):
         }
 
     except Exception as e:
+
         return {
             "status": "error",
             "message": str(e)
         }
 
-
 # --------------------------------------------------
-# NETWORK CHAOS
+# Network Chaos
 # --------------------------------------------------
 
 @app.post("/experiments/network-chaos")
@@ -182,17 +199,17 @@ def network_chaos(namespace: str):
         "message": "Network latency simulation triggered"
     }
 
-
 # --------------------------------------------------
-# LIST RUNNING PODS
+# List Pods
 # --------------------------------------------------
 
 @app.get("/pods")
 def list_pods(namespace: str = "default"):
 
-    v1 = client.CoreV1Api()
-
     try:
+
+        v1 = client.CoreV1Api()
+
         pods = v1.list_namespaced_pod(namespace)
 
         return {
@@ -201,14 +218,14 @@ def list_pods(namespace: str = "default"):
         }
 
     except Exception as e:
+
         return {
             "status": "error",
             "message": str(e)
         }
 
-
 # --------------------------------------------------
-# EXPERIMENT HISTORY
+# Experiment History
 # --------------------------------------------------
 
 @app.get("/history")
@@ -219,17 +236,16 @@ def history():
         "experiments": experiment_history
     }
 
-
 # --------------------------------------------------
-# CLUSTER HEALTH
+# Cluster Health
 # --------------------------------------------------
 
 @app.get("/cluster-health")
 def cluster_health():
 
-    v1 = client.CoreV1Api()
-
     try:
+
+        v1 = client.CoreV1Api()
 
         pods = v1.list_pod_for_all_namespaces()
 
