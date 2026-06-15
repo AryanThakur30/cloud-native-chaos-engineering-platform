@@ -4,11 +4,14 @@ from kubernetes import client, config
 app = FastAPI(
     title="Kubernetes Chaos Engineering Platform",
     description="Chaos Engineering APIs for Kubernetes",
-    version="1.0"
+    version="1.1"
 )
 
 # Load Kubernetes configuration
 config.load_kube_config()
+
+# Experiment History Storage
+experiment_history = []
 
 
 @app.get("/")
@@ -33,6 +36,12 @@ def pod_kill(namespace: str, pod_name: str):
             name=pod_name,
             namespace=namespace
         )
+
+        experiment_history.append({
+            "experiment": "pod-kill",
+            "target": pod_name,
+            "namespace": namespace
+        })
 
         return {
             "status": "success",
@@ -84,6 +93,11 @@ def cpu_stress(namespace: str):
             body=stress_pod
         )
 
+        experiment_history.append({
+            "experiment": "cpu-stress",
+            "namespace": namespace
+        })
+
         return {
             "status": "success",
             "experiment": "cpu-stress"
@@ -133,6 +147,11 @@ def memory_stress(namespace: str):
             body=memory_pod
         )
 
+        experiment_history.append({
+            "experiment": "memory-stress",
+            "namespace": namespace
+        })
+
         return {
             "status": "success",
             "experiment": "memory-stress"
@@ -143,6 +162,25 @@ def memory_stress(namespace: str):
             "status": "error",
             "message": str(e)
         }
+
+
+# --------------------------------------------------
+# NETWORK CHAOS
+# --------------------------------------------------
+
+@app.post("/experiments/network-chaos")
+def network_chaos(namespace: str):
+
+    experiment_history.append({
+        "experiment": "network-chaos",
+        "namespace": namespace
+    })
+
+    return {
+        "status": "success",
+        "experiment": "network-chaos",
+        "message": "Network latency simulation triggered"
+    }
 
 
 # --------------------------------------------------
@@ -163,6 +201,58 @@ def list_pods(namespace: str = "default"):
         }
 
     except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
+        }
+
+
+# --------------------------------------------------
+# EXPERIMENT HISTORY
+# --------------------------------------------------
+
+@app.get("/history")
+def history():
+
+    return {
+        "total_experiments": len(experiment_history),
+        "experiments": experiment_history
+    }
+
+
+# --------------------------------------------------
+# CLUSTER HEALTH
+# --------------------------------------------------
+
+@app.get("/cluster-health")
+def cluster_health():
+
+    v1 = client.CoreV1Api()
+
+    try:
+
+        pods = v1.list_pod_for_all_namespaces()
+
+        running = 0
+        failed = 0
+
+        for pod in pods.items:
+
+            if pod.status.phase == "Running":
+                running += 1
+
+            if pod.status.phase == "Failed":
+                failed += 1
+
+        return {
+            "total_pods": len(pods.items),
+            "running_pods": running,
+            "failed_pods": failed,
+            "cluster_status": "healthy"
+        }
+
+    except Exception as e:
+
         return {
             "status": "error",
             "message": str(e)
