@@ -1,51 +1,86 @@
+
 from fastapi import FastAPI
+from fastapi.responses import PlainTextResponse
 from kubernetes import client, config
+from prometheus_client import Counter, generate_latest
+from database import conn, cursor
 
 app = FastAPI(
-    title="Kubernetes Chaos Engineering Platform",
+    title="Cloud Native Chaos Engineering Platform",
     description="Chaos Engineering APIs for Kubernetes",
-    version="1.1"
+    version="3.0"
 )
 
 # --------------------------------------------------
-# Kubernetes Configuration
+# PROMETHEUS METRICS
+# --------------------------------------------------
+
+TOTAL_EXPERIMENTS = Counter(
+    "chaos_experiments_total",
+    "Total chaos experiments executed"
+)
+
+POD_KILL_COUNTER = Counter(
+    "pod_kill_total",
+    "Total pod kill experiments"
+)
+
+CPU_STRESS_COUNTER = Counter(
+    "cpu_stress_total",
+    "Total cpu stress experiments"
+)
+
+MEMORY_STRESS_COUNTER = Counter(
+    "memory_stress_total",
+    "Total memory stress experiments"
+)
+
+NETWORK_CHAOS_COUNTER = Counter(
+    "network_chaos_total",
+    "Total network chaos experiments"
+)
+
+# --------------------------------------------------
+# KUBERNETES CONFIG
 # --------------------------------------------------
 
 try:
     config.load_incluster_config()
     print("Running inside Kubernetes cluster")
+
 except:
+
     try:
         config.load_kube_config()
         print("Loaded local kubeconfig")
+
     except:
-        print("Kubernetes config not found. Running in standalone mode.")
+
+        print("Kubernetes config not found.")
+        print("Running in standalone mode.")
 
 # --------------------------------------------------
-# Experiment History Storage
-# --------------------------------------------------
-
-experiment_history = []
-
-# --------------------------------------------------
-# Home
+# HOME
 # --------------------------------------------------
 
 @app.get("/")
 def home():
+
     return {
-        "message": "K8s Chaos Platform Running",
-        "status": "healthy"
+        "project": "Cloud Native Chaos Engineering Platform",
+        "status": "healthy",
+        "version": "3.0"
     }
 
 # --------------------------------------------------
-# Pod Kill Experiment
+# POD KILL
 # --------------------------------------------------
 
 @app.post("/experiments/pod-kill")
 def pod_kill(namespace: str, pod_name: str):
 
     try:
+
         v1 = client.CoreV1Api()
 
         v1.delete_namespaced_pod(
@@ -53,26 +88,40 @@ def pod_kill(namespace: str, pod_name: str):
             namespace=namespace
         )
 
-        experiment_history.append({
-            "experiment": "pod-kill",
-            "target": pod_name,
-            "namespace": namespace
-        })
+        cursor.execute(
+            """
+            INSERT INTO experiments
+            (experiment, namespace, target, status)
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                "pod-kill",
+                namespace,
+                pod_name,
+                "success"
+            )
+        )
+
+        conn.commit()
+
+        TOTAL_EXPERIMENTS.inc()
+        POD_KILL_COUNTER.inc()
 
         return {
             "status": "success",
             "experiment": "pod-kill",
-            "deleted_pod": pod_name
+            "target": pod_name
         }
 
     except Exception as e:
+
         return {
             "status": "error",
             "message": str(e)
         }
 
 # --------------------------------------------------
-# CPU Stress Experiment
+# CPU STRESS
 # --------------------------------------------------
 
 @app.post("/experiments/cpu-stress")
@@ -82,7 +131,7 @@ def cpu_stress(namespace: str):
 
         v1 = client.CoreV1Api()
 
-        stress_pod = {
+        pod_manifest = {
             "apiVersion": "v1",
             "kind": "Pod",
             "metadata": {
@@ -106,13 +155,27 @@ def cpu_stress(namespace: str):
 
         v1.create_namespaced_pod(
             namespace=namespace,
-            body=stress_pod
+            body=pod_manifest
         )
 
-        experiment_history.append({
-            "experiment": "cpu-stress",
-            "namespace": namespace
-        })
+        cursor.execute(
+            """
+            INSERT INTO experiments
+            (experiment, namespace, target, status)
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                "cpu-stress",
+                namespace,
+                "-",
+                "success"
+            )
+        )
+
+        conn.commit()
+
+        TOTAL_EXPERIMENTS.inc()
+        CPU_STRESS_COUNTER.inc()
 
         return {
             "status": "success",
@@ -127,7 +190,7 @@ def cpu_stress(namespace: str):
         }
 
 # --------------------------------------------------
-# Memory Stress Experiment
+# MEMORY STRESS
 # --------------------------------------------------
 
 @app.post("/experiments/memory-stress")
@@ -137,7 +200,7 @@ def memory_stress(namespace: str):
 
         v1 = client.CoreV1Api()
 
-        memory_pod = {
+        pod_manifest = {
             "apiVersion": "v1",
             "kind": "Pod",
             "metadata": {
@@ -161,13 +224,27 @@ def memory_stress(namespace: str):
 
         v1.create_namespaced_pod(
             namespace=namespace,
-            body=memory_pod
+            body=pod_manifest
         )
 
-        experiment_history.append({
-            "experiment": "memory-stress",
-            "namespace": namespace
-        })
+        cursor.execute(
+            """
+            INSERT INTO experiments
+            (experiment, namespace, target, status)
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                "memory-stress",
+                namespace,
+                "-",
+                "success"
+            )
+        )
+
+        conn.commit()
+
+        TOTAL_EXPERIMENTS.inc()
+        MEMORY_STRESS_COUNTER.inc()
 
         return {
             "status": "success",
@@ -182,25 +259,38 @@ def memory_stress(namespace: str):
         }
 
 # --------------------------------------------------
-# Network Chaos
+# NETWORK CHAOS
 # --------------------------------------------------
 
 @app.post("/experiments/network-chaos")
 def network_chaos(namespace: str):
 
-    experiment_history.append({
-        "experiment": "network-chaos",
-        "namespace": namespace
-    })
+    cursor.execute(
+        """
+        INSERT INTO experiments
+        (experiment, namespace, target, status)
+        VALUES (?, ?, ?, ?)
+        """,
+        (
+            "network-chaos",
+            namespace,
+            "-",
+            "success"
+        )
+    )
+
+    conn.commit()
+
+    TOTAL_EXPERIMENTS.inc()
+    NETWORK_CHAOS_COUNTER.inc()
 
     return {
         "status": "success",
-        "experiment": "network-chaos",
-        "message": "Network latency simulation triggered"
+        "experiment": "network-chaos"
     }
 
 # --------------------------------------------------
-# List Pods
+# POD LIST
 # --------------------------------------------------
 
 @app.get("/pods")
@@ -214,7 +304,10 @@ def list_pods(namespace: str = "default"):
 
         return {
             "namespace": namespace,
-            "pods": [pod.metadata.name for pod in pods.items]
+            "pods": [
+                pod.metadata.name
+                for pod in pods.items
+            ]
         }
 
     except Exception as e:
@@ -225,19 +318,48 @@ def list_pods(namespace: str = "default"):
         }
 
 # --------------------------------------------------
-# Experiment History
+# HISTORY
 # --------------------------------------------------
 
 @app.get("/history")
 def history():
 
+    cursor.execute(
+        """
+        SELECT
+        id,
+        experiment,
+        namespace,
+        target,
+        status
+        FROM experiments
+        ORDER BY id DESC
+        """
+    )
+
+    rows = cursor.fetchall()
+
+    history_data = []
+
+    for row in rows:
+
+        history_data.append(
+            {
+                "id": row[0],
+                "experiment": row[1],
+                "namespace": row[2],
+                "target": row[3],
+                "status": row[4]
+            }
+        )
+
     return {
-        "total_experiments": len(experiment_history),
-        "experiments": experiment_history
+        "total_experiments": len(history_data),
+        "experiments": history_data
     }
 
 # --------------------------------------------------
-# Cluster Health
+# CLUSTER HEALTH
 # --------------------------------------------------
 
 @app.get("/cluster-health")
@@ -261,10 +383,10 @@ def cluster_health():
                 failed += 1
 
         return {
+            "cluster_status": "healthy",
             "total_pods": len(pods.items),
             "running_pods": running,
-            "failed_pods": failed,
-            "cluster_status": "healthy"
+            "failed_pods": failed
         }
 
     except Exception as e:
@@ -273,3 +395,14 @@ def cluster_health():
             "status": "error",
             "message": str(e)
         }
+
+# --------------------------------------------------
+# METRICS
+# --------------------------------------------------
+
+@app.get("/metrics")
+def metrics():
+
+    return PlainTextResponse(
+        generate_latest().decode("utf-8")
+    )
